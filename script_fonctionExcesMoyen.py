@@ -4,13 +4,13 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 # Charger les données
-df = pd.read_csv("standardized_residuals_egarch.csv")
+df = pd.read_csv("standardized_residuals.csv")
 
 # Choisir la série de résidus à analyser (par exemple le S&P 500)
 residuals = df["^GSPC"].dropna()
 
 # Tracer la fonction d’excès moyen
-thresholds = np.linspace(np.min(residuals), np.percentile(residuals, 99), 100)
+thresholds = np.linspace(np.percentile(residuals, 95), np.percentile(residuals, 99.5), 100)
 mean_excess = []
 
 for u in thresholds:
