@@ -1,48 +1,74 @@
+
 import pandas as pd
 import numpy as np
+import matplotlib.pyplot as plt
 from scipy.stats import genpareto
 
-# Charger les résidus standardisés
-df = pd.read_csv("standardized_residuals.csv")
+# Fichier source
+file_path = "standardized_residuals.csv"
 
-# Préparer la liste des actifs (toutes les colonnes sauf 'Date')
-assets = [col for col in df.columns if col != 'Date']
-
-# Paramètres
-quantile_level = 0.95
+# Paramètres de seuil et niveau de risque
+quantile_level = 0.75
 alpha = 0.99
 
-# Initialiser la liste de résultats
+# Charger les données
+try:
+    df = pd.read_csv(file_path)
+except FileNotFoundError:
+    raise FileNotFoundError("❌ Fichier non trouvé. Veuillez réuploader 'standardized_residuals.csv'.")
+
+# Supprimer la colonne Date si présente
+assets = [col for col in df.columns if col.lower() != 'date']
 results = []
 
 for asset in assets:
+    print(f"\n--- Traitement de l’actif : {asset} ---")
     residuals = df[asset].dropna()
-    if residuals.empty:
+
+    # Prendre la valeur absolue des résidus
+    abs_residuals = residuals.abs()
+
+    if len(abs_residuals) < 30:
+        print(f"⚠️ Trop peu de données pour l’actif {asset} → ignoré.")
         continue
-    
-    # 1. Seuil basé sur le quantile
-    u = np.quantile(residuals, quantile_level)
-    
-    # 2. Excès
-    excesses = residuals[residuals > u] - u
-    n = len(residuals)
+
+    # Définir le seuil u (quantile élevé)
+    u = np.quantile(abs_residuals, quantile_level)
+
+    # Excès au-delà du seuil
+    excesses = abs_residuals[abs_residuals > u] - u
+    n = len(abs_residuals)
     nu = len(excesses)
-    
-    # Vérifier assez d'excès
+
     if nu < 5:
-        xi, beta, VaR_alpha, ES_alpha = [np.nan]*4
+        xi, beta, VaR_alpha, ES_alpha = [np.nan] * 4
     else:
-        # 3. Estimation GPD
+        # Ajustement GPD
         xi, loc, beta = genpareto.fit(excesses, floc=0)
-        
-        # 4. VaR et ES
-        VaR_alpha = u + (beta/xi) * (((n/nu)*(1-alpha))**(-xi) - 1)
-        ES_alpha = (VaR_alpha + beta - xi*u) / (1 - xi) if xi < 1 else np.nan
-    
-    # Ajouter aux résultats
+
+        # Calcul de la VaR et de l'ES
+        VaR_alpha = u + (beta / xi) * (((n / nu) * (1 - alpha)) ** (-xi) - 1)
+        ES_alpha = (VaR_alpha + beta - xi * u) / (1 - xi) if xi < 1 else np.nan
+
+        # Tracer la fonction de survie
+        sorted_excesses = np.sort(excesses)
+        empirical_sf = 1 - np.arange(1, len(excesses) + 1) / (len(excesses) + 1)
+        gpd_sf = genpareto.sf(sorted_excesses, xi, loc=0, scale=beta)
+
+        plt.figure(figsize=(8, 5))
+        plt.plot(sorted_excesses, empirical_sf, marker='o', linestyle='none', label="Empirique")
+        plt.plot(sorted_excesses, gpd_sf, color='red', label="GPD ajustée")
+        plt.yscale("log")
+        plt.xlabel("Excès (|x| - u)")
+        plt.ylabel("Fonction de survie (log-scale)")
+        plt.title(f"Survie empirique vs. GPD - {asset}")
+        plt.legend()
+        plt.grid(True)
+        plt.show()
+
     results.append({
         'asset': asset,
-        'threshold_95%': u,
+        'threshold': u,
         'xi': xi,
         'beta': beta,
         'VaR_99%': VaR_alpha,
@@ -50,16 +76,8 @@ for asset in assets:
         'num_excesses': nu
     })
 
-# Créer DataFrame des résultats
+# Résumé CSV
 summary_df = pd.DataFrame(results)
+summary_df.to_csv("gpd_summary_abs_residuals.csv", index=False)
+print("\n✅ Résultats enregistrés dans 'gpd_summary_abs_residuals.csv'")
 
-# Sauvegarder dans un CSV
-output_path = "gpd_summary.csv"
-summary_df.to_csv(output_path, index=False)
-
-# Afficher la table pour l'utilisateur
-# import ace_tools as tools
-# tools.display_dataframe_to_user(name="Résumé GPD pour chaque actif", dataframe=summary_df)
-
-# Fournir un lien vers le fichier CSV
-print(f"[Télécharger le résumé GPD en CSV]({output_path})")

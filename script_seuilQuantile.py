@@ -4,56 +4,73 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.stats import genpareto
 
-# Charger les résidus standardisés
-df = pd.read_csv("standardized_residuals.csv")
+# Reupload requis du fichier CSV
+file_path = "standardized_residuals.csv"
 
-# Choisir un actif (par exemple le S&P 500)
-asset = "^GSPC"
-residuals = df[asset].dropna()
+# Tenter de charger le fichier si disponible
+try:
+    df = pd.read_csv(file_path)
+except FileNotFoundError:
+    raise FileNotFoundError("Veuillez réuploader le fichier 'standardized_residuals.csv'.")
 
-# Paramètre : quantile choisi (par exemple 95 %)
-quantile = 0.95
-threshold = np.quantile(residuals, quantile)
+# Actifs à analyser (en ignorant la colonne 'Date' si elle existe)
+assets = [col for col in df.columns if col.lower() != 'date']
 
-# Extraire les excès : x - u pour x > u
-excesses = residuals[residuals > threshold] - threshold
-
-# Estimation des paramètres de la GPD (form: ξ, loc, scale)
-# loc = 0 car on travaille avec les excès x - u
-shape, loc, scale = genpareto.fit(excesses, floc=0)
-
-print(f"Seuil (u) : {threshold:.4f}")
-print(f"Paramètre de forme ξ : {shape:.4f}")
-print(f"Paramètre d'échelle β : {scale:.4f}")
-
-# Tracer la fonction de survie empirique vs. modèle GPD
-sorted_excesses = np.sort(excesses)
-empirical_sf = 1 - np.arange(1, len(excesses)+1) / (len(excesses)+1)
-gpd_sf = genpareto.sf(sorted_excesses, shape, loc=0, scale=scale)
-
-plt.figure(figsize=(8, 5))
-plt.plot(sorted_excesses, empirical_sf, marker='o', linestyle='none', label="Empirique")
-plt.plot(sorted_excesses, gpd_sf, color='red', label="GPD ajustée")
-plt.yscale("log")
-plt.xlabel("Excès (x - u)")
-plt.ylabel("Fonction de survie (log-scale)")
-plt.title(f"Survie empirique vs. GPD - {asset}")
-plt.legend()
-plt.grid(True)
-plt.show()
-
-
-# 6. Calcul de la VaR et de l’ES pour un niveau α
+# Paramètres
+quantile_level = 0.91
 alpha = 0.99
-n = len(residuals)
-nu = len(excesses)
-# VaR à niveau α
-VaR_alpha = threshold + (scale/shape) * ( ((n/nu)*(1-alpha))**(-shape) - 1 )
-# ES à niveau α (si ξ < 1)
-if shape < 1:
-    ES_alpha = (VaR_alpha + scale - shape*threshold) / (1 - shape)
-else:
-    ES_alpha = np.nan
 
-print(f"VaR à {alpha*100:.1f}% : {VaR_alpha:.4f}")
-print(f"ES  à {alpha*100:.1f}% : {ES_alpha:.4f}")
+# Liste de résultats
+results = []
+
+for asset in assets:
+    residuals = df[asset].dropna()
+    if residuals.empty:
+        continue
+
+    u = np.quantile(residuals, quantile_level)
+    excesses = residuals[residuals > u] - u
+    n = len(residuals)
+    nu = len(excesses)
+
+    if nu < 5:
+        xi, beta, VaR_alpha, ES_alpha = [np.nan] * 4
+    else:
+        xi, loc, beta = genpareto.fit(excesses, floc=0)
+        VaR_alpha = u + (beta / xi) * (((n / nu) * (1 - alpha)) ** (-xi) - 1)
+        ES_alpha = (VaR_alpha + beta - xi * u) / (1 - xi) if xi < 1 else np.nan
+
+        # Tracer la fonction de survie empirique vs. modèle GPD
+        sorted_excesses = np.sort(excesses)
+        empirical_sf = 1 - np.arange(1, len(excesses) + 1) / (len(excesses) + 1)
+        gpd_sf = genpareto.sf(sorted_excesses, xi, loc=0, scale=beta)
+
+        plt.figure(figsize=(8, 5))
+        plt.plot(sorted_excesses, empirical_sf, marker='o', linestyle='none', label="Empirique")
+        plt.plot(sorted_excesses, gpd_sf, color='red', label="GPD ajustée")
+        plt.yscale("log")
+        plt.xlabel("Excès (x - u)")
+        plt.ylabel("Fonction de survie (log-scale)")
+        plt.title(f"Survie empirique vs. GPD - {asset}")
+        plt.legend()
+        plt.grid(True)
+        plt.show()
+
+    results.append({
+        'asset': asset,
+        'threshold_95%': u,
+        'xi': xi,
+        'beta': beta,
+        'VaR_99%': VaR_alpha,
+        'ES_99%': ES_alpha,
+        'num_excesses': nu
+    })
+
+# Créer un DataFrame résumé
+summary_df = pd.DataFrame(results)
+
+# Sauvegarder le résumé dans un fichier CSV
+summary_path = "gpd_summary.csv"
+summary_df.to_csv(summary_path, index=False)
+
+
