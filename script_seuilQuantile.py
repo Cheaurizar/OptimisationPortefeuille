@@ -17,7 +17,7 @@ except FileNotFoundError:
 assets = [col for col in df.columns if col.lower() != 'date']
 
 # Paramètres
-quantile_level = 0.91
+quantile_level = 0.90
 alpha = 0.99
 
 # Liste de résultats

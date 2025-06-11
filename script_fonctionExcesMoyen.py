@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 from scipy.stats import genpareto
 
 # ---------------------------------------------------------------------------------------------------------------------
-# 1. Charger les résidus standardisés
+# 2. Charger les résidus standardisés
 # ---------------------------------------------------------------------------------------------------------------------
 # Remplacez le chemin ci-dessous par celui de votre fichier local si nécessaire
 csv_path = "standardized_residuals.csv"
@@ -14,30 +14,30 @@ df = pd.read_csv(csv_path)
 assets = [col for col in df.columns if col.lower() != "date"]
 
 # ---------------------------------------------------------------------------------------------------------------------
-# 2. Fonction pour tracer la fonction d’excès moyen (mean excess plot)
+# 3. Fonction pour tracer la fonction d’excès moyen (mean excess plot)
 # ---------------------------------------------------------------------------------------------------------------------
 def mean_excess_plot(residuals, asset_name):
     """
     Affiche la fonction d'excès moyen e(u) pour une série de résidus donnée.
     L'utilisateur pourra ensuite choisir visuellement un seuil u.
     """
-    # On restreint la plage des seuils entre le 90e et le 99.5e percentile pour rester dans la queue
-    p_min, p_max = 90, 99.5
+    # On restreint la plage des seuils entre le 91e et le 99.5e percentile pour rester dans la queue
+    p_min, p_max = 91, 99.5
     u_min = np.percentile(residuals, p_min)
     u_max = np.percentile(residuals, p_max)
     
-    # Générer 100 seuils uniformément espacés entre u_min et u_max
-    thresholds = np.linspace(u_min, u_max, 100)
+    # Générer 101 seuils uniformément espacés entre u_min et u_max
+    thresholds = np.linspace(u_min, u_max, 101)
     mean_excess = []
     
     for u in thresholds:
         tail = residuals[residuals > u]
-        if len(tail) > 0:
+        if len(tail) > 1:
             mean_excess.append(np.mean(tail - u))
         else:
             mean_excess.append(np.nan)
     
-    plt.figure(figsize=(8, 5))
+    plt.figure(figsize=(9, 5))
     plt.plot(thresholds, mean_excess, marker='o', linestyle='-')
     plt.title(f"Mean Excess Plot pour {asset_name}")
     plt.xlabel("Seuil u")
@@ -47,13 +47,13 @@ def mean_excess_plot(residuals, asset_name):
 
 
 # ---------------------------------------------------------------------------------------------------------------------
-# 3. Boucle principale : pour chaque actif, afficher le plot, demander le seuil, ajuster la GPD et calculer VaR/ES
+# 4. Boucle principale : pour chaque actif, afficher le plot, demander le seuil, ajuster la GPD et calculer VaR/ES
 # ---------------------------------------------------------------------------------------------------------------------
 results = []
-alpha = 0.99  # Niveau pour VaR et ES
+alpha = 1.99  # Niveau pour VaR et ES
 
 for asset in assets:
-    residuals = df[asset].dropna()
+    residuals = np.abs(df[asset].dropna())  # Utilisation des valeurs absolues
     if residuals.empty:
         continue
     

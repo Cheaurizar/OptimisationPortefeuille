@@ -1,15 +1,17 @@
-
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-from scipy.stats import genpareto
+from scipy.stats import genpareto, t  # t : pour simuler des résidus t-Student
 
 # Fichier source
 file_path = "standardized_residuals.csv"
 
-# Paramètres de seuil et niveau de risque
-quantile_level = 0.75
-alpha = 0.99
+# Paramètres
+quantile_level = 0.95  # seuil EVT
+alpha = 0.99           # niveau de VaR / ES
+simulated_sample_size = 10000
+# Degrés de liberté pour t-Student (adapter selon votre modèle GARCH)
+df_t = 5
 
 # Charger les données
 try:
@@ -23,34 +25,34 @@ results = []
 
 for asset in assets:
     print(f"\n--- Traitement de l’actif : {asset} ---")
-    residuals = df[asset].dropna()
+    original_residuals = df[asset].dropna()
 
-    # Prendre la valeur absolue des résidus
-    abs_residuals = residuals.abs()
-
-    if len(abs_residuals) < 30:
+    if len(original_residuals) < 30:
         print(f"⚠️ Trop peu de données pour l’actif {asset} → ignoré.")
         continue
 
-    # Définir le seuil u (quantile élevé)
-    u = np.quantile(abs_residuals, quantile_level)
+    # Partie 3 : Simulation de résidus selon une loi t
+    simulated_resid = t.rvs(df_t, size=simulated_sample_size)
+    abs_resid = np.abs(simulated_resid)
 
-    # Excès au-delà du seuil
-    excesses = abs_residuals[abs_residuals > u] - u
-    n = len(abs_residuals)
+    # Seuil EVT basé sur un quantile élevé
+    u = np.quantile(abs_resid, quantile_level)
+    excesses = abs_resid[abs_resid > u] - u
+    n = len(abs_resid)
     nu = len(excesses)
 
     if nu < 5:
+        print("⚠️ Pas assez d'excès pour ajuster une GPD.")
         xi, beta, VaR_alpha, ES_alpha = [np.nan] * 4
     else:
         # Ajustement GPD
         xi, loc, beta = genpareto.fit(excesses, floc=0)
 
-        # Calcul de la VaR et de l'ES
+        # Calcul de VaR/ES
         VaR_alpha = u + (beta / xi) * (((n / nu) * (1 - alpha)) ** (-xi) - 1)
         ES_alpha = (VaR_alpha + beta - xi * u) / (1 - xi) if xi < 1 else np.nan
 
-        # Tracer la fonction de survie
+        # Courbe de survie
         sorted_excesses = np.sort(excesses)
         empirical_sf = 1 - np.arange(1, len(excesses) + 1) / (len(excesses) + 1)
         gpd_sf = genpareto.sf(sorted_excesses, xi, loc=0, scale=beta)
@@ -61,7 +63,7 @@ for asset in assets:
         plt.yscale("log")
         plt.xlabel("Excès (|x| - u)")
         plt.ylabel("Fonction de survie (log-scale)")
-        plt.title(f"Survie empirique vs. GPD - {asset}")
+        plt.title(f"Survie empirique vs. GPD - {asset} (résidus simulés)")
         plt.legend()
         plt.grid(True)
         plt.show()
@@ -78,6 +80,5 @@ for asset in assets:
 
 # Résumé CSV
 summary_df = pd.DataFrame(results)
-summary_df.to_csv("gpd_summary_abs_residuals.csv", index=False)
-print("\n✅ Résultats enregistrés dans 'gpd_summary_abs_residuals.csv'")
-
+summary_df.to_csv("gpd_summary_simulated_residuals.csv", index=False)
+print("\n✅ Résultats enregistrés dans 'gpd_summary_simulated_residuals.csv'")
